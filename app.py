@@ -1,68 +1,61 @@
+# app.py
 import streamlit as st
+import joblib
 import pandas as pd
 import numpy as np
-import joblib
-import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Load dataset
-df = pd.read_excel("Online Retail.xlsx")
-df.dropna(subset=["CustomerID"], inplace=True)
-df = df[df["Quantity"] > 0]
-df = df[df["UnitPrice"] > 0]
+# Load the saved models
+kmeans = joblib.load('kmeans_model.pkl')
+scaler = joblib.load('scaler.pkl')
+pca = joblib.load('pca_model.pkl')
 
-# ✅ Create TotalPrice column
-df["TotalPrice"] = df["Quantity"] * df["UnitPrice"]
+# Set up the Streamlit app interface
+st.title("Customer Segmentation with K-Means Clustering")
 
-# Set reference date for Recency calculation
-ref_date = df["InvoiceDate"].max()
+# Upload CSV file for prediction
+uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
 
-# RFM Calculation
-rfm = df.groupby("CustomerID").agg({
-    "InvoiceDate": lambda x: (ref_date - x.max()).days,
-    "InvoiceNo": "nunique",
-    "TotalPrice": "sum"
-}).rename(columns={
-    "InvoiceDate": "Recency",
-    "InvoiceNo": "Frequency",
-    "TotalPrice": "Monetary"
-})
+if uploaded_file is not None:
+    # Load the uploaded data
+    new_data = pd.read_csv(uploaded_file)
 
-# Standardize RFM
-scaler = StandardScaler()
-rfm_scaled = scaler.fit_transform(rfm)
+    # Preprocess data as required (you may need to modify this depending on the new dataset structure)
+    new_data["TotalPrice"] = new_data["Quantity"] * new_data["UnitPrice"]
+    
+    # Perform RFM calculations for new data
+    new_rfm = new_data.groupby("CustomerID").agg({
+        "InvoiceDate": lambda x: (new_data["InvoiceDate"].max() - x.max()).days,
+        "InvoiceNo": "nunique",
+        "TotalPrice": "sum"
+    }).rename(columns={
+        "InvoiceDate": "Recency",
+        "InvoiceNo": "Frequency",
+        "TotalPrice": "Monetary"
+    })
 
-# PCA for visualization
-pca = PCA(n_components=2)
-pca_rfm = pca.fit_transform(rfm_scaled)
+    # Standardize new data using the scaler
+    new_rfm_scaled = scaler.transform(new_rfm)
 
-# K-Means Clustering
-kmeans = KMeans(n_clusters=4, random_state=42)
-clusters = kmeans.fit_predict(rfm_scaled)
-rfm["Cluster"] = clusters
+    # Apply PCA transformation
+    new_rfm_pca = pca.transform(new_rfm_scaled)
 
-# Streamlit Header
-st.title("Customer Segmentation with K-Means")
+    # Predict clusters for new data
+    new_clusters = kmeans.predict(new_rfm_pca)
 
-# Display Cluster Summary
+    # Display results
+    new_rfm["Cluster"] = new_clusters
+    st.write(new_rfm)
+
+    # Plot the clusters
+    plt.figure(figsize=(8, 6))
+    sns.scatterplot(x=new_rfm_pca[:, 0], y=new_rfm_pca[:, 1], hue=new_clusters, palette="Set2")
+    st.pyplot()
+
+# Display summary
 st.subheader("Cluster Summary")
-st.write(rfm.groupby("Cluster").mean())
-
-# Display Scatter Plot of Clusters
-st.subheader("Customer Segments via K-Means")
-fig, ax = plt.subplots(figsize=(8, 6))
-sns.scatterplot(x=pca_rfm[:, 0], y=pca_rfm[:, 1], hue=rfm["Cluster"], palette="Set2", ax=ax)
-ax.set_title("Customer Segments")
-ax.set_xlabel("PCA 1")
-ax.set_ylabel("PCA 2")
-st.pyplot(fig)
-
-# Save models for later use (optional)
-joblib.dump(kmeans, 'kmeans_model.pkl')
-joblib.dump(scaler, 'scaler.pkl')
-joblib.dump(pca, 'pca_model.pkl')
-
-st.write("Models saved as kmeans_model.pkl, scaler.pkl, pca_model.pkl.")
+summary = pd.DataFrame(kmeans.cluster_centers_, columns=new_rfm.columns)
+st.write(summary)
