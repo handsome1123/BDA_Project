@@ -1,25 +1,20 @@
-# app.py
 import streamlit as st
-import joblib
 import pandas as pd
 import numpy as np
+import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
 
-# Load the saved models
-kmeans = joblib.load('kmeans_model.pkl')
-scaler = joblib.load('scaler.pkl')
-pca = joblib.load('pca_model.pkl')
-
-# Load the dataset (use your actual dataset path or URL)
+# Load dataset
 df = pd.read_excel("Online Retail.xlsx")
 df.dropna(subset=["CustomerID"], inplace=True)
 df = df[df["Quantity"] > 0]
 df = df[df["UnitPrice"] > 0]
 
-# Create TotalPrice column
+# ✅ Create TotalPrice column
 df["TotalPrice"] = df["Quantity"] * df["UnitPrice"]
 
 # Set reference date for Recency calculation
@@ -37,13 +32,17 @@ rfm = df.groupby("CustomerID").agg({
 })
 
 # Standardize RFM
-rfm_scaled = scaler.transform(rfm)
+scaler = StandardScaler()
+rfm_scaled = scaler.fit_transform(rfm)
 
 # PCA for visualization
-pca_rfm = pca.transform(rfm_scaled)
+pca = PCA(n_components=2)
+pca_rfm = pca.fit_transform(rfm_scaled)
 
-# Predict clusters
-rfm["Cluster"] = kmeans.predict(rfm_scaled)
+# K-Means Clustering
+kmeans = KMeans(n_clusters=4, random_state=42)
+clusters = kmeans.fit_predict(rfm_scaled)
+rfm["Cluster"] = clusters
 
 # Streamlit Header
 st.title("Customer Segmentation with K-Means")
@@ -61,3 +60,9 @@ ax.set_xlabel("PCA 1")
 ax.set_ylabel("PCA 2")
 st.pyplot(fig)
 
+# Save models for later use (optional)
+joblib.dump(kmeans, 'kmeans_model.pkl')
+joblib.dump(scaler, 'scaler.pkl')
+joblib.dump(pca, 'pca_model.pkl')
+
+st.write("Models saved as kmeans_model.pkl, scaler.pkl, pca_model.pkl.")
