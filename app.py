@@ -6,7 +6,7 @@ import seaborn as sns
 from sklearn.decomposition import PCA
 
 st.set_page_config(page_title="RFM Customer Segmentation", layout="wide")
-st.title("Customer Segmentation using RFM and K-Means")
+st.title("Project2_Group-15")
 
 # Load data and models
 @st.cache_data
