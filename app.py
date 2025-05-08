@@ -1,71 +1,48 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import joblib
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans
+import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.decomposition import PCA
 
-# Streamlit page config
-st.set_page_config(page_title="Customer Segmentation with K-Means", layout="wide")
+st.set_page_config(page_title="RFM Customer Segmentation", layout="wide")
+st.title("Customer Segmentation using RFM and K-Means")
 
-# Title
-st.title("🔍 Customer Segmentation App with K-Means Clustering")
+# Load data and models
+@st.cache_data
+def load_data_and_models():
+    rfm = pd.read_csv("rfm_with_clusters.csv", index_col="CustomerID")
+    with open("kmeans_model.pkl", "rb") as f:
+        kmeans = pickle.load(f)
+    with open("scaler.pkl", "rb") as f:
+        scaler = pickle.load(f)
+    return rfm, kmeans, scaler
 
-# Sidebar to upload the dataset
-uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type=["csv"])
+rfm, kmeans, scaler = load_data_and_models()
 
-if uploaded_file is not None:
-    # Load dataset
-    df = pd.read_csv(uploaded_file)
-    
-    # Preprocess data: Create TotalPrice column and calculate Recency, Frequency, and Monetary
-    df["TotalPrice"] = df["Quantity"] * df["UnitPrice"]
-    ref_date = df["InvoiceDate"].max()
-    
-    rfm = df.groupby("CustomerID").agg({
-        "InvoiceDate": lambda x: (ref_date - x.max()).days,
-        "InvoiceNo": "nunique",
-        "TotalPrice": "sum"
-    }).rename(columns={
-        "InvoiceDate": "Recency",
-        "InvoiceNo": "Frequency",
-        "TotalPrice": "Monetary"
-    })
-    
-    # Standardize data
-    scaler = joblib.load('scaler.pkl')
-    rfm_scaled = scaler.transform(rfm)
+# Show RFM + Cluster table
+st.subheader("RFM Table with Cluster Labels")
+st.dataframe(rfm.reset_index(), use_container_width=True)
 
-    # Apply PCA for 2D visualization
-    pca = joblib.load('pca_model.pkl')
-    rfm_pca = pca.transform(rfm_scaled)
+# PCA Visualization
+st.subheader("Cluster Visualization using PCA")
 
-    # Sidebar to select the number of clusters
-    n_clusters = st.sidebar.slider("Select number of clusters (k)", 2, 10, 4)
+# Perform PCA again on the RFM features
+rfm_features = rfm[["Recency", "Frequency", "Monetary"]]
+rfm_scaled = scaler.transform(rfm_features)
 
-    # Load the KMeans model and predict clusters
-    kmeans = joblib.load('kmeans_model.pkl')
-    clusters = kmeans.predict(rfm_pca)
-    
-    # Add the cluster predictions to the DataFrame
-    rfm["Cluster"] = clusters
+pca = PCA(n_components=2)
+pca_result = pca.fit_transform(rfm_scaled)
 
-    # Display the RFM table with clusters
-    st.subheader("Customer Segmentation Results")
-    st.write(rfm)
+rfm["PCA1"] = pca_result[:, 0]
+rfm["PCA2"] = pca_result[:, 1]
 
-    # Plot clusters
-    plt.figure(figsize=(8, 6))
-    sns.scatterplot(x=rfm_pca[:, 0], y=rfm_pca[:, 1], hue=clusters, palette="Set2")
-    plt.title(f"Customer Segments with k = {n_clusters}")
-    plt.xlabel("PCA 1")
-    plt.ylabel("PCA 2")
-    st.pyplot()
+fig, ax = plt.subplots(figsize=(8, 6))
+sns.scatterplot(data=rfm, x="PCA1", y="PCA2", hue="Cluster", palette="Set2", ax=ax)
+ax.set_title("Customer Segments via PCA")
+st.pyplot(fig)
 
-    # Display summary of clusters
-    st.subheader("Cluster Summary")
-    summary = rfm.groupby("Cluster").mean()
-    st.write(summary)
+# Cluster Summary
+st.subheader("Average RFM Values per Cluster")
+cluster_summary = rfm.groupby("Cluster")[["Recency", "Frequency", "Monetary"]].mean()
+st.dataframe(cluster_summary)
