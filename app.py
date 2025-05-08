@@ -1,54 +1,68 @@
 import streamlit as st
-import pickle
-import numpy as np
 import pandas as pd
+import numpy as np
+import joblib
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Load model and scaler
-model = pickle.load(open("model.pkl", "rb"))
-scaler = pickle.load(open("scaler.pkl", "rb"))
+# Load the saved models
+kmeans = joblib.load('kmeans_model.pkl')
+scaler = joblib.load('scaler.pkl')
+pca = joblib.load('pca_model.pkl')
 
-st.title("Retail Campaign Response Predictor")
+# Streamlit interface
+st.title("Customer Segmentation with K-Means")
+st.write("This application uses K-Means clustering to segment customers based on RFM (Recency, Frequency, Monetary) analysis.")
 
-# Input UI for all features
-age = st.slider("Age", 18, 100)
-income = st.number_input("Income", 0, 200000)
-kidhome = st.slider("Number of Kids at Home", 0, 3)
-teenhome = st.slider("Number of Teenagers at Home", 0, 3)
-recency = st.slider("Last Purchase (Days Ago)", 0, 100)
-mnt_wines = st.number_input("Wine Spending", 0, 2000)
-mnt_fruits = st.number_input("Fruits Spending", 0, 1000)
-mnt_meat = st.number_input("Meat Products Spending", 0, 2000)
-mnt_fish = st.number_input("Fish Products Spending", 0, 1000)
-mnt_sweets = st.number_input("Sweet Products Spending", 0, 1000)
-mnt_gold = st.number_input("Gold Products Spending", 0, 2000)
-num_deals = st.slider("Number of Deals Purchases", 0, 10)
-num_web = st.slider("Number of Web Purchases", 0, 20)
-num_catalog = st.slider("Number of Catalog Purchases", 0, 20)
-num_store = st.slider("Number of Store Purchases", 0, 20)
-num_web_visits = st.slider("Web Visits Last Month", 0, 20)
-accepted_cmp1 = st.checkbox("Accepted Campaign 1")
-accepted_cmp2 = st.checkbox("Accepted Campaign 2")
-accepted_cmp3 = st.checkbox("Accepted Campaign 3")
-accepted_cmp4 = st.checkbox("Accepted Campaign 4")
-accepted_cmp5 = st.checkbox("Accepted Campaign 5")
+# Upload the dataset
+uploaded_file = st.file_uploader("Upload your dataset", type=["xlsx", "csv"])
+if uploaded_file is not None:
+    # Load and display the dataset
+    df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith("xlsx") else pd.read_csv(uploaded_file)
+    st.write("Dataset Preview", df.head())
+    
+    # Clean data (same as in the notebook)
+    df.dropna(subset=["CustomerID"], inplace=True)
+    df = df[df["Quantity"] > 0]
+    df = df[df["UnitPrice"] > 0]
+    
+    # Create TotalPrice column
+    df["TotalPrice"] = df["Quantity"] * df["UnitPrice"]
+    
+    # Calculate RFM values
+    ref_date = df["InvoiceDate"].max()
+    rfm = df.groupby("CustomerID").agg({
+        "InvoiceDate": lambda x: (ref_date - x.max()).days,
+        "InvoiceNo": "nunique",
+        "TotalPrice": "sum"
+    }).rename(columns={
+        "InvoiceDate": "Recency",
+        "InvoiceNo": "Frequency",
+        "TotalPrice": "Monetary"
+    })
 
-# Create DataFrame with same column order as training
-input_data = pd.DataFrame([[
-    age, income, kidhome, teenhome, recency, mnt_wines, mnt_fruits, mnt_meat, mnt_fish,
-    mnt_sweets, mnt_gold, num_deals, num_web, num_catalog, num_store, num_web_visits,
-    int(accepted_cmp1), int(accepted_cmp2), int(accepted_cmp3), int(accepted_cmp4), int(accepted_cmp5)
-]], columns=[
-    'Age', 'Income', 'Kidhome', 'Teenhome', 'Recency', 'MntWines', 'MntFruits',
-    'MntMeatProducts', 'MntFishProducts', 'MntSweetProducts', 'MntGoldProds',
-    'NumDealsPurchases', 'NumWebPurchases', 'NumCatalogPurchases', 'NumStorePurchases',
-    'NumWebVisitsMonth', 'AcceptedCmp1', 'AcceptedCmp2', 'AcceptedCmp3', 
-    'AcceptedCmp4', 'AcceptedCmp5'
-])
+    # Standardize RFM values
+    rfm_scaled = scaler.transform(rfm)
 
-# Scale the data
-input_scaled = scaler.transform(input_data)
+    # Apply PCA transformation
+    pca_rfm = pca.transform(rfm_scaled)
 
-# Predict
-if st.button("Predict"):
-    prediction = model.predict(input_scaled)
-    st.success(f"Prediction: {'Will Respond' if prediction[0] == 1 else 'Will Not Respond'}")
+    # Predict clusters using the K-Means model
+    clusters = kmeans.predict(pca_rfm)
+    rfm["Cluster"] = clusters
+
+    # Display results
+    st.write(f"Number of clusters: {len(set(clusters))}")
+    st.write(rfm.head())
+
+    # Plot clusters
+    st.subheader("Customer Segments Visualization")
+    plt.figure(figsize=(8, 6))
+    sns.scatterplot(x=pca_rfm[:, 0], y=pca_rfm[:, 1], hue=clusters, palette="Set2")
+    plt.title("Customer Segments via K-Means")
+    plt.xlabel("PCA 1")
+    plt.ylabel("PCA 2")
+    st.pyplot()
