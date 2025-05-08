@@ -1,17 +1,19 @@
+# app.py
 import streamlit as st
 import joblib
 import pandas as pd
 import numpy as np
-from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 
-# Load models
+# Load the saved models
 kmeans = joblib.load('kmeans_model.pkl')
 scaler = joblib.load('scaler.pkl')
 pca = joblib.load('pca_model.pkl')
 
-# Load dataset
+# Load the dataset (use your actual dataset path or URL)
 df = pd.read_excel("Online Retail.xlsx")
 df.dropna(subset=["CustomerID"], inplace=True)
 df = df[df["Quantity"] > 0]
@@ -41,23 +43,21 @@ rfm_scaled = scaler.transform(rfm)
 pca_rfm = pca.transform(rfm_scaled)
 
 # Predict clusters
-clusters = kmeans.predict(pca_rfm)
-rfm["Cluster"] = clusters
+rfm["Cluster"] = kmeans.predict(rfm_scaled)
 
-# Streamlit header and title
-st.title('Customer Segmentation Dashboard')
-st.write('This app visualizes customer segmentation based on purchasing behavior.')
+# Streamlit Header
+st.title("Customer Segmentation with K-Means")
 
-# Display cluster summary
-st.subheader('Cluster Summary')
-summary = rfm.groupby("Cluster").mean()
-st.write(summary)
+# Display Cluster Summary
+st.subheader("Cluster Summary")
+st.write(rfm.groupby("Cluster").mean())
 
-# Plot cluster visualization
-st.subheader('Customer Segments Visualization')
-plt.figure(figsize=(8, 6))
-sns.scatterplot(x=pca_rfm[:, 0], y=pca_rfm[:, 1], hue=clusters, palette="Set2")
-plt.title("Customer Segments via K-Means")
-plt.xlabel("PCA 1")
-plt.ylabel("PCA 2")
-st.pyplot()
+# Display Scatter Plot of Clusters
+st.subheader("Customer Segments via K-Means")
+fig, ax = plt.subplots(figsize=(8, 6))
+sns.scatterplot(x=pca_rfm[:, 0], y=pca_rfm[:, 1], hue=rfm["Cluster"], palette="Set2", ax=ax)
+ax.set_title("Customer Segments")
+ax.set_xlabel("PCA 1")
+ax.set_ylabel("PCA 2")
+st.pyplot(fig)
+
